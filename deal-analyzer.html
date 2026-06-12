@@ -471,30 +471,42 @@ function AuthGate({ productCode, productName, children }) {
 
   React.useEffect(() => {
     let unsub;
-    const init = async () => {
-      if (!window.CREAuth) {
-        await new Promise(r => document.addEventListener("creauth:ready", r, { once: true }));
-      }
-      const session = await window.CREAuth.getSession();
+    let cancelled = false;
+
+    // Decide status for a given session. Calls hasEntitlement (a DB query),
+    // so this must only run OUTSIDE supabase-js's auth-change lock.
+    const evaluate = async (session) => {
       if (!session) { setUser(null); setStatus("locked"); return; }
       setUser(session.user);
       if (productCode === "cre_u_any") {
         const hasLife = await window.CREAuth.hasEntitlement("cre_u_lifetime");
         const hasMo = await window.CREAuth.hasEntitlement("cre_u_monthly");
-        setStatus(hasLife || hasMo ? "ready" : "nosub");
+        if (!cancelled) setStatus(hasLife || hasMo ? "ready" : "nosub");
         return;
       }
       const hasEnt = await window.CREAuth.hasEntitlement(productCode);
-      setStatus(hasEnt ? "ready" : "nosub");
+      if (!cancelled) setStatus(hasEnt ? "ready" : "nosub");
     };
-    init();
-    const attach = () => {
-      const { data: { subscription } } = window.CREAuth.onAuthStateChange(() => init());
+
+    const start = async () => {
+      if (!window.CREAuth) {
+        await new Promise(r => document.addEventListener("creauth:ready", r, { once: true }));
+      }
+      // Initial check runs outside any auth lock — safe to query directly.
+      const session = await window.CREAuth.getSession();
+      evaluate(session);
+      // onAuthStateChange fires while supabase-js holds its internal auth lock.
+      // Awaiting getSession()/DB calls inside it deadlocks (v2 footgun). So: read
+      // the session from the callback args (no re-query) and defer the DB work
+      // with setTimeout so it runs after the lock releases.
+      const { data: { subscription } } = window.CREAuth.onAuthStateChange((_event, session) => {
+        setTimeout(() => { if (!cancelled) evaluate(session); }, 0);
+      });
       unsub = () => subscription.unsubscribe();
     };
-    if (window.CREAuth) attach();
-    else document.addEventListener("creauth:ready", attach, { once: true });
-    return () => { if (unsub) unsub(); };
+
+    start();
+    return () => { cancelled = true; if (unsub) unsub(); };
   }, [productCode]);
 
   const handleSubmit = async (e) => {
