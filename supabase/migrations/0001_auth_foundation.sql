@@ -99,10 +99,26 @@ create trigger on_auth_user_created
 
 -- =================================================================
 -- 5. HELPER VIEW FOR CHECKING ENTITLEMENT
+-- security_invoker = on so the view runs as the *querying* user and
+-- respects the entitlements RLS policy below — not as the postgres
+-- owner (a definer view would silently bypass the caller's RLS).
 -- =================================================================
-create or replace view public.my_active_entitlements as
+create or replace view public.my_active_entitlements
+  with (security_invoker = on) as
 select product_code, granted_at, expires_at, source
 from public.entitlements
 where user_id = auth.uid()
   and status = 'active'
   and (expires_at is null or expires_at > now());
+
+-- =================================================================
+-- 6. GRANTS
+-- PostgREST runs queries as the `authenticated` (or `anon`) role. RLS
+-- decides which ROWS are visible, but the role still needs table/view
+-- level SELECT privilege or PostgREST returns HTTP 403 before RLS is
+-- ever evaluated. Missing these grants is what caused the 403 on
+-- my_active_entitlements. RLS keeps each user scoped to their own rows.
+-- =================================================================
+grant select on public.entitlements to authenticated;
+grant select on public.my_active_entitlements to authenticated;
+
