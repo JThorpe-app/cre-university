@@ -57,9 +57,14 @@
         if (!session) return false;
         const { data, error } = await supabase
           .from("my_active_entitlements")
-          .select("product_code")
+          .select("*")
           .eq("product_code", productCode)
           .maybeSingle();
+        // --- TEMP DEBUG (remove once entitlement bug is fixed) ---
+        console.log("ENTITLEMENT QUERY productCode:", productCode, "user:", session.user.id);
+        console.log("ENTITLEMENT QUERY DATA:", data);
+        console.log("ENTITLEMENT QUERY ERROR:", error);
+        // --- END TEMP DEBUG ---
         return !error && !!data;
       },
 
