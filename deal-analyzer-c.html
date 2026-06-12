@@ -17,6 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="/auth.js"></script>
 
 <style>
   :root {
@@ -1463,7 +1464,189 @@ function Footer() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+/* ===== Auth gate (CRE U auth integration) =========================
+   Wraps the app in a login wall + entitlement check.
+   NOTE: Stripe checkout is not wired up yet — the buy buttons show a
+   "coming soon" notice. A later session replaces handleBuy() with real
+   Stripe Payment Links. ============================================== */
+const PRODUCT_CODE = "da_c";
+const PRODUCT_NAME = "Deal Analyzer · Pro";
+
+function AuthGate({ productCode, productName, children }) {
+  const [status, setStatus] = React.useState("loading"); // loading | locked | nosub | ready
+  const [user, setUser] = React.useState(null);
+  const [mode, setMode] = React.useState("signin"); // signin | signup | forgot
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [info, setInfo] = React.useState("");
+
+  React.useEffect(() => {
+    let unsub;
+    let cancelled = false;
+
+    // Decide status for a given session. Calls hasEntitlement (a DB query),
+    // so this must only run OUTSIDE supabase-js's auth-change lock.
+    const evaluate = async (session) => {
+      if (!session) { setUser(null); setStatus("locked"); return; }
+      setUser(session.user);
+      if (productCode === "cre_u_any") {
+        const hasLife = await window.CREAuth.hasEntitlement("cre_u_lifetime");
+        const hasMo = await window.CREAuth.hasEntitlement("cre_u_monthly");
+        if (!cancelled) setStatus(hasLife || hasMo ? "ready" : "nosub");
+        return;
+      }
+      const hasEnt = await window.CREAuth.hasEntitlement(productCode);
+      if (!cancelled) setStatus(hasEnt ? "ready" : "nosub");
+    };
+
+    const start = async () => {
+      if (!window.CREAuth) {
+        await new Promise(r => document.addEventListener("creauth:ready", r, { once: true }));
+      }
+      // Initial check runs outside any auth lock — safe to query directly.
+      const session = await window.CREAuth.getSession();
+      evaluate(session);
+      // onAuthStateChange fires while supabase-js holds its internal auth lock.
+      // Awaiting getSession()/DB calls inside it deadlocks (v2 footgun). So: read
+      // the session from the callback args (no re-query) and defer the DB work
+      // with setTimeout so it runs after the lock releases.
+      const { data: { subscription } } = window.CREAuth.onAuthStateChange((_event, session) => {
+        setTimeout(() => { if (!cancelled) evaluate(session); }, 0);
+      });
+      unsub = () => subscription.unsubscribe();
+    };
+
+    start();
+    return () => { cancelled = true; if (unsub) unsub(); };
+  }, [productCode]);
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault();
+    setError(""); setInfo("");
+    if (mode === "signin") {
+      const { error } = await window.CREAuth.signIn(email, password);
+      if (error) setError(error.message);
+    } else if (mode === "signup") {
+      const { error } = await window.CREAuth.signUp(email, password);
+      if (error) setError(error.message);
+      else setInfo("Check your email to confirm your account.");
+    } else if (mode === "forgot") {
+      const { error } = await window.CREAuth.resetPassword(email);
+      if (error) setError(error.message);
+      else setInfo("Password reset link sent. Check your email.");
+    }
+  };
+
+  const handleBuy = (label) => {
+    window.alert(label + " — checkout isn't live yet. It's coming soon. You're signed in, so access will appear here automatically once it launches.");
+  };
+
+  if (status === "loading") {
+    return <div className="min-h-screen flex items-center justify-center text-[14px]" style={{color: "var(--muted)"}}>Loading…</div>;
+  }
+
+  if (status === "locked") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{background: "#E6DFD1"}}>
+        <div className="w-full max-w-[420px] card-hi p-6">
+          <div className="font-display text-[28px] mb-2" style={{fontWeight: 700}}>
+            {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Reset password"}
+          </div>
+          <p className="text-[13px] mb-5" style={{color: "var(--muted)"}}>
+            {mode === "signin" ? "Welcome back." : mode === "signup" ? "Get started — Deal Analyzer A is included free with signup." : "Enter your email and we'll send a reset link."}
+          </p>
+          <form onSubmit={handleSubmit}>
+            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required
+              className="w-full px-3 py-2.5 mb-3 text-[14px] rounded-lg"
+              style={{background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text)"}}/>
+            {mode !== "forgot" && (
+              <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
+                className="w-full px-3 py-2.5 mb-3 text-[14px] rounded-lg"
+                style={{background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text)"}}/>
+            )}
+            {error && <div className="text-[12.5px] mb-3 p-2.5 rounded-lg" style={{background: "rgba(220,38,38,0.08)", color: "var(--danger)"}}>{error}</div>}
+            {info && <div className="text-[12.5px] mb-3 p-2.5 rounded-lg" style={{background: "rgba(0,169,104,0.08)", color: "var(--accent)"}}>{info}</div>}
+            <button type="submit" className="w-full py-3 text-[13.5px] uppercase tracking-wider font-bold rounded-xl"
+              style={{background: "var(--accent)", color: "#FFF"}}>
+              {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
+            </button>
+          </form>
+          <div className="mt-4 text-[12px] text-center" style={{color: "var(--muted)"}}>
+            {mode === "signin" && (
+              <>
+                <button onClick={() => { setMode("signup"); setError(""); setInfo(""); }} className="underline">Create account</button>
+                {" · "}
+                <button onClick={() => { setMode("forgot"); setError(""); setInfo(""); }} className="underline">Forgot password</button>
+              </>
+            )}
+            {mode === "signup" && (
+              <button onClick={() => { setMode("signin"); setError(""); setInfo(""); }} className="underline">Have an account? Sign in</button>
+            )}
+            {mode === "forgot" && (
+              <button onClick={() => { setMode("signin"); setError(""); setInfo(""); }} className="underline">Back to sign in</button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "nosub") {
+    const isCreU = productCode === "cre_u_any";
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{background: "#E6DFD1"}}>
+        <div className="w-full max-w-[460px] card-hi p-6 text-center">
+          <div className="font-display text-[28px] mb-2" style={{fontWeight: 700}}>
+            Unlock {productName}
+          </div>
+          <p className="text-[13.5px] mb-5" style={{color: "var(--muted)", lineHeight: 1.55}}>
+            You're signed in as <b>{user?.email}</b> but don't have access to this product yet.
+          </p>
+          {isCreU ? (
+            <>
+              <button onClick={() => handleBuy("CRE University · Lifetime ($399)")}
+                className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
+                style={{background: "linear-gradient(135deg, var(--gold), var(--gold-2))", color: "#3A2700", boxShadow: "0 4px 0 #A77517"}}>
+                Lifetime · $399 — Coming soon
+              </button>
+              <button onClick={() => handleBuy("CRE University · Monthly ($49/mo)")}
+                className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
+                style={{background: "var(--accent)", color: "#FFF"}}>
+                Monthly · $49 — Coming soon
+              </button>
+            </>
+          ) : productCode === "da_a" ? (
+            <p className="text-[13px] mb-4" style={{color: "var(--muted)", lineHeight: 1.55}}>
+              This tool is free with your account. Your access is still finalizing — refresh in a moment, and if it persists, sign out and back in.
+            </p>
+          ) : (
+            <button onClick={() => handleBuy(productName)}
+              className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
+              style={{background: "linear-gradient(135deg, var(--gold), var(--gold-2))", color: "#3A2700", boxShadow: "0 4px 0 #A77517"}}>
+              Buy now — Coming soon
+            </button>
+          )}
+          <button onClick={() => window.CREAuth.signOut()} className="text-[12px] underline" style={{color: "var(--muted)"}}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return children;
+}
+
+function GatedApp() {
+  return (
+    <AuthGate productCode={PRODUCT_CODE} productName={PRODUCT_NAME}>
+      <App />
+    </AuthGate>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<GatedApp />);
 </script>
 </body>
 </html>
