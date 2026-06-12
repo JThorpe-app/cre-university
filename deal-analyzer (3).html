@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Deal Analyzer — Underwrite a CRE deal in 60 seconds</title>
+
+<meta property="og:title" content="Deal Analyzer" />
+<meta property="og:description" content="Underwrite a commercial real estate deal in 60 seconds. Move the sliders. Watch the math." />
+<meta property="og:type" content="website" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  :root {
+    --bg: #EFE9DD;
+    --bg-elev: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --border: #D9D2C2;
+    --border-hi: #BFB5A0;
+    --text: #0F1729;
+    --muted: #4B5563;
+    --dim: #6F7A92;
+    --accent: #00A968;
+    --accent-2: #008A56;
+    --gold: #D4912A;
+    --gold-2: #B17518;
+    --danger: #DC2626;
+    --info: #2563EB;
+    --purple: #7C3AED;
+    --glow: rgba(0, 169, 104, 0.20);
+  }
+  html, body, #root {
+    min-height: 100%;
+    background: #E6DFD1;
+    color: var(--text);
+    font-family: 'Geist', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { margin: 0; }
+  .font-display { font-family: 'Fraunces', serif; font-feature-settings: 'ss01'; letter-spacing: -0.022em; }
+  .font-mono { font-family: 'Geist Mono', monospace; }
+
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
+  .card-hi { background: var(--bg-card); border: 1px solid var(--border-hi); border-radius: 18px; box-shadow: 0 8px 30px -10px rgba(15,23,41,0.10); }
+
+  @keyframes fadeUp { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;} }
+  .anim-fadeUp { animation: fadeUp 0.5s ease-out both; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 28px; background: transparent; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 6px; background: linear-gradient(to right, var(--accent), var(--accent-2)); border-radius: 999px; }
+  input[type="range"]::-moz-range-track { height: 6px; background: linear-gradient(to right, var(--accent), var(--accent-2)); border-radius: 999px; border: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; border: 2px solid var(--accent); margin-top: -8px; box-shadow: 0 2px 8px rgba(0,169,104,0.30); cursor: pointer; }
+  input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; border: 2px solid var(--accent); box-shadow: 0 2px 8px rgba(0,169,104,0.30); cursor: pointer; }
+
+  .hairline { height: 1px; background: var(--border); }
+  .big-tap { transition: transform 80ms ease, background 120ms ease; }
+  .big-tap:active { transform: scale(0.98); }
+
+  .seg-btn { transition: all 120ms ease; }
+  .seg-btn.active { background: var(--text); color: #FFFFFF; }
+
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .upgrade-shimmer { background: linear-gradient(90deg, var(--gold) 0%, #F4C572 30%, var(--gold) 70%); background-size: 200% 100%; animation: shimmer 6s linear infinite; }
+
+  @media (min-width: 720px) { .app-shell { padding-top: 48px; padding-bottom: 64px; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const fmtShort = (n) => {
+  if (Math.abs(n) >= 1e6) return "$" + (n/1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return "$" + (n/1e3).toFixed(0) + "k";
+  return "$" + Math.round(n);
+};
+const fmtPct = (n, d=2) => n.toFixed(d) + "%";
+
+const DEFINITIONS = {
+  "Cap Rate": "Capitalization Rate = NOI / Price. The yield you'd earn buying the property all-cash. Higher = better return for the price.",
+  "DSCR": "Debt Service Coverage Ratio = NOI / Annual Debt Payment. Banks want 1.25x+. Below 1.20x and most lenders walk.",
+  "Cash Flow": "NOI minus annual debt service. What hits your bank account every year after the mortgage is paid.",
+  "Cash-on-Cash": "Annual Cash Flow / Total Cash Invested. Your actual return on the money you put down. The number that matters most to most investors.",
+  "NOI": "Net Operating Income = revenue minus operating expenses, before debt service. The property's earning power independent of financing.",
+  "Interest-Only": "A loan period where you pay only interest, no principal. Common in value-add deals — boosts year-1 cash flow at the cost of equity buildup.",
+  "Vacancy": "% of gross potential rent you assume will be lost to empty units, turnover, or non-payment. National average is 5-8% depending on asset class.",
+  "Property Management": "% of effective gross income paid to a third-party operator. Self-storage 6%, multifamily 4-8%, hotels 3-5% on top of a brand fee.",
+  "Closing Costs": "Title, legal, lender fees, transfer taxes. Usually 2-4% of purchase price. Often missed by amateurs underwriting cap rate but not return on equity.",
+  "Amortization": "How many years the loan principal is spread across. Longer = lower monthly payment, slower equity buildup. CRE loans typically amortize 20-30 yr even with a 5-10 yr term.",
+};
+
+const PRESETS = {
+  "default": { name: "Mid-size MF", price: 2_400_000, gpr: 380_000, otherIncome: 12_000, vacancy: 6, opex: 152_000, mgmt: 5, debt: 1_800_000, rate: 7.25, amort: 25, ioYears: 0, closingPct: 2.5 },
+  "small": { name: "Small 4-plex", price: 850_000, gpr: 145_000, otherIncome: 4_000, vacancy: 6, opex: 60_000, mgmt: 6, debt: 595_000, rate: 7.50, amort: 25, ioYears: 0, closingPct: 3 },
+  "value-add": { name: "Value-add", price: 1_650_000, gpr: 240_000, otherIncome: 8_000, vacancy: 14, opex: 105_000, mgmt: 5, debt: 1_320_000, rate: 8.25, amort: 25, ioYears: 2, closingPct: 3 },
+};
+
+function App() {
+  return (
+    <div className="app-shell w-full min-h-screen flex flex-col items-center px-4 sm:px-6">
+      <div className="w-full max-w-[580px]">
+        <Header />
+        <Analyzer />
+        <UpgradeCard />
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
+function Header() {
+  return (
+    <div className="pt-8 pb-5 anim-fadeUp">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-[11px] uppercase tracking-[0.22em]" style={{color: "var(--dim)"}}>Live Underwriting</span>
+        <span className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold"
+          style={{background: "rgba(0,169,104,0.10)", color: "var(--accent)", border: "1px solid rgba(0,169,104,0.30)"}}>
+          Quick Screen · Free
+        </span>
+      </div>
+      <h1 className="font-display text-[36px] sm:text-[44px]" style={{lineHeight: 1.02, fontWeight: 700}}>
+        Deal Analyzer
+      </h1>
+      <p className="text-[14px] mt-3" style={{color: "var(--muted)", lineHeight: 1.55}}>
+        Underwrite a commercial real estate deal in 60 seconds. Drag the sliders. Watch the math react in real time.
+      </p>
+    </div>
+  );
+}
+
+function Analyzer() {
+  const [preset, setPreset] = useState("default");
+  const [price, setPrice] = useState(PRESETS.default.price);
+  const [gpr, setGpr] = useState(PRESETS.default.gpr);
+  const [otherIncome, setOtherIncome] = useState(PRESETS.default.otherIncome);
+  const [vacancy, setVacancy] = useState(PRESETS.default.vacancy);
+  const [opex, setOpex] = useState(PRESETS.default.opex);
+  const [mgmt, setMgmt] = useState(PRESETS.default.mgmt);
+  const [debt, setDebt] = useState(PRESETS.default.debt);
+  const [rate, setRate] = useState(PRESETS.default.rate);
+  const [amort, setAmort] = useState(PRESETS.default.amort);
+  const [ioYears, setIoYears] = useState(PRESETS.default.ioYears);
+  const [closingPct, setClosingPct] = useState(PRESETS.default.closingPct);
+  const [activeExplain, setActiveExplain] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const applyPreset = (key) => {
+    const p = PRESETS[key];
+    setPreset(key);
+    setPrice(p.price); setGpr(p.gpr); setOtherIncome(p.otherIncome); setVacancy(p.vacancy);
+    setOpex(p.opex); setMgmt(p.mgmt); setDebt(p.debt); setRate(p.rate);
+    setAmort(p.amort); setIoYears(p.ioYears); setClosingPct(p.closingPct);
+  };
+
+  const calc = useMemo(() => {
+    const vacancyLoss = gpr * (vacancy / 100);
+    const egi = gpr - vacancyLoss + otherIncome;
+    const mgmtFee = egi * (mgmt / 100);
+    const totalOpex = opex + mgmtFee;
+    const noi = egi - totalOpex;
+
+    const closingCosts = price * (closingPct / 100);
+    const downPayment = Math.max(price - debt, 0);
+    const equity = downPayment + closingCosts;
+
+    const r = (rate / 100) / 12;
+    const n = amort * 12;
+    const monthlyPI = debt > 0 && r > 0 ? (debt * r * Math.pow(1+r,n)) / (Math.pow(1+r,n)-1) : 0;
+    const monthlyIO = debt > 0 ? debt * r : 0;
+    const inIO = ioYears > 0;
+    const monthly = inIO ? monthlyIO : monthlyPI;
+    const annualDebt = monthly * 12;
+
+    const cap = (noi / price) * 100;
+    const dscr = annualDebt > 0 ? noi / annualDebt : 0;
+    const cashFlow = noi - annualDebt;
+    const coc = equity > 0 ? (cashFlow / equity) * 100 : 0;
+
+    return { noi, egi, vacancyLoss, mgmtFee, totalOpex, equity, closingCosts, monthly, annualDebt, cap, dscr, cashFlow, coc, inIO };
+  }, [price, gpr, otherIncome, vacancy, opex, mgmt, debt, rate, amort, ioYears, closingPct]);
+
+  const verdict = useMemo(() => {
+    if (calc.cashFlow < 0) return { tone: "bad", text: "Negative cash flow. You're feeding this deal every month." };
+    if (calc.dscr < 1.2) return { tone: "bad", text: "DSCR too thin. Banks walk. So should you." };
+    if (calc.dscr >= 1.3 && calc.cap >= 7) return { tone: "good", text: "Solid math. Banks will fund it. Now stress-test it." };
+    if (calc.cap < 6) return { tone: "warn", text: "Tight cap. You're paying premium — better have a value-add play." };
+    return { tone: "warn", text: "Borderline. Stress-test it before signing anything." };
+  }, [calc]);
+
+  const tone = verdict.tone === "good" ? "var(--accent)" : verdict.tone === "bad" ? "var(--danger)" : "var(--gold)";
+
+  return (
+    <div className="anim-fadeUp" style={{animationDelay: "60ms"}}>
+      {/* Preset selector */}
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1" style={{scrollbarWidth: "none"}}>
+        {Object.entries(PRESETS).map(([k, p]) => (
+          <button key={k} onClick={() => applyPreset(k)}
+            className={"seg-btn text-[12px] px-3 py-2 rounded-full whitespace-nowrap font-medium " + (preset === k ? "active" : "")}
+            style={preset === k ? {} : {background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--muted)"}}>
+            {p.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Output card */}
+      <div className="card-hi p-4 sm:p-5 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-[11px] uppercase tracking-[0.18em]" style={{color: "var(--dim)"}}>Output · Year 1</div>
+          <button onClick={() => applyPreset(preset)} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-full"
+            style={{background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--muted)"}}>
+            Reset
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <BigMetric label="Cap Rate" value={fmtPct(calc.cap, 2)} color={calc.cap >= 8 ? "var(--accent)" : calc.cap >= 6 ? "var(--gold)" : "var(--danger)"} onExplain={() => setActiveExplain("Cap Rate")}/>
+          <BigMetric label="DSCR" value={calc.dscr.toFixed(2) + "x"} color={calc.dscr >= 1.3 ? "var(--accent)" : calc.dscr >= 1.2 ? "var(--gold)" : "var(--danger)"} onExplain={() => setActiveExplain("DSCR")}/>
+          <BigMetric label="Cash Flow" value={(calc.cashFlow >= 0 ? "+" : "") + fmtShort(calc.cashFlow)} color={calc.cashFlow >= 0 ? "var(--accent)" : "var(--danger)"} subtitle="per year" onExplain={() => setActiveExplain("Cash Flow")}/>
+          <BigMetric label="CoC" value={fmtPct(calc.coc, 1)} color={calc.coc >= 8 ? "var(--accent)" : calc.coc >= 5 ? "var(--gold)" : "var(--danger)"} subtitle="year 1" onExplain={() => setActiveExplain("Cash-on-Cash")}/>
+        </div>
+
+        <div className="hairline my-4"/>
+
+        {/* Mini ledger */}
+        <div className="space-y-1.5 mb-4">
+          <LedgerRow label="Effective Gross Income" value={fmtShort(calc.egi)}/>
+          <LedgerRow label="Total Operating Expenses" value={"-" + fmtShort(calc.totalOpex)} negative/>
+          <LedgerRow label="NOI" value={fmtShort(calc.noi)} bold onExplain={() => setActiveExplain("NOI")}/>
+          <LedgerRow label="Annual Debt Service" value={"-" + fmtShort(calc.annualDebt)} negative subtitle={calc.inIO ? "Interest-only" : amort + " yr amort"}/>
+          <LedgerRow label="Cash Flow" value={fmtShort(calc.cashFlow)} bold accent={calc.cashFlow >= 0 ? "var(--accent)" : "var(--danger)"}/>
+          <LedgerRow label="Total Cash In" value={fmtShort(calc.equity)} subtitle={"Down + " + closingPct + "% closing"}/>
+        </div>
+
+        <div className="hairline mb-4"/>
+
+        <div className="flex items-start gap-2.5">
+          <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5" style={{background: tone + "33"}}>
+            <span style={{color: tone, fontSize: 11, fontWeight: 700}}>!</span>
+          </div>
+          <p className="text-[14px]" style={{color: tone, lineHeight: 1.5, fontWeight: 600}}>{verdict.text}</p>
+        </div>
+      </div>
+
+      {/* Helper banner */}
+      <div className="flex items-center gap-2 mb-3 p-3 rounded-xl"
+        style={{background: "rgba(37,99,235,0.07)", border: "1px solid rgba(37,99,235,0.20)"}}>
+        <span style={{color: "var(--info)", fontWeight: 700}}>↓</span>
+        <p className="text-[12.5px]" style={{color: "var(--muted)", lineHeight: 1.4}}>
+          <span style={{color: "var(--info)", fontWeight: 600}}>Adjust the inputs below.</span> The numbers above react in real time.
+        </p>
+      </div>
+
+      {/* DEAL section */}
+      <SectionHeader title="The Deal"/>
+      <div className="card p-4 sm:p-5 space-y-4 mb-4">
+        <SliderRow label="Purchase Price" value={price} setValue={setPrice} min={250000} max={15000000} step={50000} fmt={fmtShort}/>
+        <SliderRow label="Gross Rental Income" value={gpr} setValue={setGpr} min={20000} max={2000000} step={5000} fmt={fmtShort}/>
+        <SliderRow label="Other Income" value={otherIncome} setValue={setOtherIncome} min={0} max={200000} step={1000} fmt={fmtShort} subtitle="Parking, laundry, fees"/>
+        <SliderRow label="Vacancy" value={vacancy} setValue={setVacancy} min={0} max={30} step={0.5} fmt={v => v.toFixed(1) + "%"} onExplain={() => setActiveExplain("Vacancy")}/>
+        <SliderRow label="Operating Expenses" value={opex} setValue={setOpex} min={5000} max={1000000} step={2500} fmt={fmtShort} subtitle="Taxes + insurance + R&M + utilities"/>
+        <SliderRow label="Property Mgmt Fee" value={mgmt} setValue={setMgmt} min={0} max={12} step={0.5} fmt={v => v.toFixed(1) + "%"} subtitle="% of EGI" onExplain={() => setActiveExplain("Property Management")}/>
+      </div>
+
+      {/* DEBT section */}
+      <SectionHeader title="The Debt"/>
+      <div className="card p-4 sm:p-5 space-y-4 mb-4">
+        <SliderRow label="Loan Amount" value={debt} setValue={setDebt} min={0} max={Math.floor(price * 0.85)} step={25000} fmt={fmtShort} subtitle={((debt/price)*100).toFixed(0) + "% LTV"}/>
+        <SliderRow label="Interest Rate" value={rate} setValue={setRate} min={4} max={12} step={0.125} fmt={v => v.toFixed(3) + "%"}/>
+        <SliderRow label="Amortization" value={amort} setValue={setAmort} min={15} max={30} step={5} fmt={v => v + " yr"} onExplain={() => setActiveExplain("Amortization")}/>
+      </div>
+
+      {/* Advanced toggle */}
+      <button onClick={() => setShowAdvanced(!showAdvanced)}
+        className="w-full mb-4 text-left flex items-center justify-between px-4 py-3 rounded-xl"
+        style={{background: "var(--bg-card)", border: "1px dashed var(--border-hi)"}}>
+        <span className="text-[13px] font-semibold" style={{color: "var(--muted)"}}>Advanced inputs</span>
+        <span className="text-[12px]" style={{color: "var(--dim)"}}>{showAdvanced ? "Hide" : "Show"}</span>
+      </button>
+
+      {showAdvanced && (
+        <div className="card p-4 sm:p-5 space-y-4 mb-4 anim-fadeUp">
+          <SliderRow label="Interest-Only Period" value={ioYears} setValue={setIoYears} min={0} max={5} step={1} fmt={v => v === 0 ? "None" : v + " yr"} onExplain={() => setActiveExplain("Interest-Only")}/>
+          <SliderRow label="Closing Costs" value={closingPct} setValue={setClosingPct} min={0} max={6} step={0.25} fmt={v => v.toFixed(2) + "%"} subtitle="% of purchase price" onExplain={() => setActiveExplain("Closing Costs")}/>
+        </div>
+      )}
+
+      {activeExplain && (
+        <Definition term={activeExplain} onClose={() => setActiveExplain(null)} />
+      )}
+    </div>
+  );
+}
+
+function SectionHeader({ title }) {
+  return (
+    <div className="text-[11px] uppercase tracking-[0.18em] mb-2 px-1" style={{color: "var(--dim)", fontWeight: 600}}>
+      {title}
+    </div>
+  );
+}
+
+function BigMetric({ label, value, color, subtitle, onExplain }) {
+  return (
+    <button onClick={onExplain}
+      className="text-left p-3 rounded-xl relative big-tap"
+      style={{background: "var(--bg-elev)", border: "1px solid var(--border)"}}>
+      <div className="text-[9.5px] uppercase tracking-wider" style={{color: "var(--dim)"}}>{label}</div>
+      <div className="font-display text-[24px] mt-0.5" style={{color, lineHeight: 1.1, fontWeight: 700}}>{value}</div>
+      {subtitle && <div className="text-[10px] mt-0.5" style={{color: "var(--muted)"}}>{subtitle}</div>}
+      <span className="absolute top-2 right-2 w-4 h-4 rounded-full flex items-center justify-center font-mono text-[9px] font-bold"
+        style={{background: "var(--border)", color: "var(--dim)"}}>?</span>
+    </button>
+  );
+}
+
+function LedgerRow({ label, value, subtitle, bold, negative, accent, onExplain }) {
+  const labelSize = bold ? "13" : "12.5";
+  const valueSize = bold ? "14" : "13";
+  return (
+    <div className="flex items-baseline justify-between">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={"text-[" + labelSize + "px] " + (bold ? "font-semibold" : "")} style={{color: bold ? "var(--text)" : "var(--muted)"}}>
+          {label}
+        </span>
+        {subtitle && <span className="text-[10px]" style={{color: "var(--dim)"}}>· {subtitle}</span>}
+        {onExplain && (
+          <button onClick={onExplain} className="w-3.5 h-3.5 rounded-full flex items-center justify-center" style={{background: "var(--bg-elev)", border: "1px solid var(--border)"}}>
+            <span className="font-mono text-[8px]" style={{color: "var(--dim)"}}>?</span>
+          </button>
+        )}
+      </div>
+      <span className={"font-mono text-[" + valueSize + "px] " + (bold ? "font-bold" : "")} style={{color: accent || (negative ? "var(--muted)" : "var(--text)")}}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SliderRow({ label, value, setValue, min, max, step, fmt, onExplain, subtitle }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[13px] font-semibold" style={{color: "var(--text)"}}>{label}</span>
+          {onExplain && (
+            <button onClick={onExplain} className="w-4 h-4 rounded-full flex items-center justify-center" style={{background: "var(--bg-card)", border: "1px solid var(--border)"}}>
+              <span className="font-mono text-[9px]" style={{color: "var(--dim)"}}>?</span>
+            </button>
+          )}
+        </div>
+        <span className="font-mono text-[15px]" style={{color: "var(--accent)", fontWeight: 600}}>{fmt(value)}</span>
+      </div>
+      {subtitle && <div className="text-[10.5px] mb-1.5" style={{color: "var(--dim)"}}>{subtitle}</div>}
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e => setValue(parseFloat(e.target.value))}/>
+    </div>
+  );
+}
+
+function Definition({ term, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 py-6"
+      style={{background: "rgba(15,23,41,0.45)"}}
+      onClick={onClose}>
+      <div className="w-full max-w-[460px] card p-5"
+        onClick={e => e.stopPropagation()}
+        style={{background: "var(--bg-card)", boxShadow: "0 20px 60px -20px rgba(15,23,41,0.30)"}}>
+        <div className="flex items-start justify-between mb-2">
+          <div className="font-display text-[22px]" style={{fontWeight: 700}}>{term}</div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center"
+            style={{background: "var(--bg-elev)", border: "1px solid var(--border)", color: "var(--muted)"}}>
+            ×
+          </button>
+        </div>
+        <p className="text-[14px]" style={{color: "var(--muted)", lineHeight: 1.55}}>
+          {DEFINITIONS[term] || "Definition coming soon."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function UpgradeCard() {
+  return (
+    <div className="mt-6 mb-2 anim-fadeUp" style={{animationDelay: "180ms"}}>
+      <div className="rounded-2xl p-5 sm:p-6"
+        style={{background: "linear-gradient(135deg, #1A1410 0%, #2A1F18 100%)", border: "1px solid rgba(212,145,42,0.35)"}}>
+        <div className="mb-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] mb-1" style={{color: "var(--gold)", fontWeight: 700}}>Need More?</div>
+          <div className="font-display text-[24px] sm:text-[28px]" style={{color: "#FFF8E7", lineHeight: 1.1, fontWeight: 700}}>
+            Underwriter & Pro
+          </div>
+        </div>
+        <p className="text-[13px] mb-4" style={{color: "rgba(255,248,231,0.75)", lineHeight: 1.5}}>
+          This tool screens deals. Underwriter and Pro let you fully underwrite them — with multi-year projections, IRR, equity multiple, tax modeling, and sensitivity analysis.
+        </p>
+
+        <div className="space-y-3">
+          <div className="p-3.5 rounded-xl" style={{background: "rgba(255,248,231,0.05)", border: "1px solid rgba(212,145,42,0.25)"}}>
+            <div className="flex items-baseline justify-between mb-1">
+              <div className="font-display text-[18px]" style={{color: "#FFF8E7", fontWeight: 700}}>Underwriter</div>
+              <div className="font-mono text-[16px]" style={{color: "var(--gold)", fontWeight: 700}}>$79</div>
+            </div>
+            <p className="text-[12px]" style={{color: "rgba(255,248,231,0.65)", lineHeight: 1.45}}>
+              Full expense breakdown · 5-10 yr projections · IRR & Equity Multiple · Year-by-year cash flows · Charts
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl" style={{background: "rgba(255,248,231,0.05)", border: "1px solid rgba(212,145,42,0.25)"}}>
+            <div className="flex items-baseline justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <div className="font-display text-[18px]" style={{color: "#FFF8E7", fontWeight: 700}}>Pro</div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider upgrade-shimmer" style={{color: "#1A1410"}}>Best</span>
+              </div>
+              <div className="font-mono text-[16px]" style={{color: "var(--gold)", fontWeight: 700}}>$299</div>
+            </div>
+            <p className="text-[12px]" style={{color: "rgba(255,248,231,0.65)", lineHeight: 1.45}}>
+              Everything in Underwriter · Tax & depreciation · Sensitivity matrix · Asset-class presets (hotels, MF, STR, storage, MHP) · PDF export · Save deals
+            </p>
+          </div>
+        </div>
+
+        <button onClick={() => window.alert("Coming soon. Drop your email at hello@your-domain.com for early access.")}
+          className="w-full mt-4 py-3 text-[13.5px] uppercase tracking-wider font-bold"
+          style={{background: "linear-gradient(135deg, var(--gold), var(--gold-2))", color: "#3A2700", borderRadius: 12, boxShadow: "0 4px 0 #A77517"}}>
+          Get Notified When Live
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <div className="mt-6 mb-8 text-center anim-fadeUp" style={{animationDelay: "220ms"}}>
+      <p className="text-[11px]" style={{color: "var(--dim)", lineHeight: 1.5}}>
+        Educational tool · Not investment advice
+      </p>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

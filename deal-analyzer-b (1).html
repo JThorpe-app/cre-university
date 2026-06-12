@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Deal Analyzer · Underwriter — Full multi-year CRE underwriting</title>
+
+<meta property="og:title" content="Deal Analyzer · Underwriter" />
+<meta property="og:description" content="Full multi-year underwriting. IRR, Equity Multiple, year-by-year cash flows, equity buildup charts." />
+<meta property="og:type" content="website" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  :root {
+    --bg: #EFE9DD;
+    --bg-elev: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --border: #D9D2C2;
+    --border-hi: #BFB5A0;
+    --text: #0F1729;
+    --muted: #4B5563;
+    --dim: #6F7A92;
+    --accent: #00A968;
+    --accent-2: #008A56;
+    --gold: #D4912A;
+    --gold-2: #B17518;
+    --danger: #DC2626;
+    --info: #2563EB;
+    --purple: #7C3AED;
+    --glow: rgba(0, 169, 104, 0.20);
+  }
+  html, body, #root {
+    min-height: 100%;
+    background: #E6DFD1;
+    color: var(--text);
+    font-family: 'Geist', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { margin: 0; }
+  .font-display { font-family: 'Fraunces', serif; font-feature-settings: 'ss01'; letter-spacing: -0.022em; }
+  .font-mono { font-family: 'Geist Mono', monospace; }
+
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
+  .card-hi { background: var(--bg-card); border: 1px solid var(--border-hi); border-radius: 18px; box-shadow: 0 8px 30px -10px rgba(15,23,41,0.10); }
+
+  @keyframes fadeUp { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;} }
+  .anim-fadeUp { animation: fadeUp 0.5s ease-out both; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 28px; background: transparent; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 6px; background: linear-gradient(to right, var(--accent), var(--accent-2)); border-radius: 999px; }
+  input[type="range"]::-moz-range-track { height: 6px; background: linear-gradient(to right, var(--accent), var(--accent-2)); border-radius: 999px; border: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; border: 2px solid var(--accent); margin-top: -8px; box-shadow: 0 2px 8px rgba(0,169,104,0.30); cursor: pointer; }
+  input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; border: 2px solid var(--accent); box-shadow: 0 2px 8px rgba(0,169,104,0.30); cursor: pointer; }
+
+  .hairline { height: 1px; background: var(--border); }
+  .big-tap { transition: transform 80ms ease, background 120ms ease; }
+  .big-tap:active { transform: scale(0.98); }
+
+  .seg-btn { transition: all 120ms ease; }
+  .seg-btn.active { background: var(--text); color: #FFFFFF; }
+
+  .tab-btn { transition: all 150ms ease; }
+  .tab-btn.active-tab { background: var(--text); color: #FFFFFF; }
+
+  .table-row:hover { background: rgba(0,169,104,0.04); }
+
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .upgrade-shimmer { background: linear-gradient(90deg, var(--gold) 0%, #F4C572 30%, var(--gold) 70%); background-size: 200% 100%; animation: shimmer 6s linear infinite; }
+
+  @media (min-width: 720px) { .app-shell { padding-top: 48px; padding-bottom: 64px; } }
+  @media print {
+    body { background: #FFFFFF !important; }
+    .no-print { display: none !important; }
+    .card, .card-hi { box-shadow: none !important; border: 1px solid #999 !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const fmtShort = (n) => {
+  if (Math.abs(n) >= 1e6) return "$" + (n/1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return "$" + (n/1e3).toFixed(0) + "k";
+  return "$" + Math.round(n);
+};
+const fmtFull = (n) => "$" + Math.round(n).toLocaleString();
+const fmtPct = (n, d=2) => n.toFixed(d) + "%";
+
+const DEFINITIONS = {
+  "Cap Rate": "Capitalization Rate = NOI / Price. The yield you'd earn buying the property all-cash.",
+  "DSCR": "Debt Service Coverage Ratio = NOI / Annual Debt Payment. Banks want 1.25x+.",
+  "Cash Flow": "NOI minus annual debt service. What hits your bank account every year after the mortgage is paid.",
+  "Cash-on-Cash": "Annual Cash Flow / Total Cash Invested. Your actual return on the money you put down.",
+  "NOI": "Net Operating Income = revenue minus operating expenses, before debt service.",
+  "IRR": "Internal Rate of Return. The annualized return on your investment accounting for the time value of money. The single most important multi-year metric. Pros want 15%+ for value-add, 10%+ for stabilized.",
+  "Equity Multiple": "Total cash you receive / Equity you invested. 2.0x means you doubled your money over the hold. 2.5x+ is good for a 5-yr hold; 3.0x+ for 7-yr.",
+  "Average CoC": "Average annual Cash-on-Cash return across the hold period. Smooths out year-1 lumpiness.",
+  "Exit Cap": "Cap rate you assume the buyer pays when you sell. Higher exit cap = lower sale price (conservative). Often assume exit cap = entry cap + 0.5%.",
+  "Rent Growth": "% you assume rents grow each year. Conservative: 2-3%. Aggressive: 5%+.",
+  "Selling Costs": "Broker commission + transfer taxes + legal at sale. Typically 4-6% of sale price.",
+};
+
+const PRESETS = {
+  "default": { name: "Mid-size MF", price: 2_400_000, gpr: 380_000, otherIncome: 12_000, vacancy: 6, opex: 152_000, mgmt: 5, debt: 1_800_000, rate: 7.25, amort: 25, ioYears: 0, closingPct: 2.5, capex: 0, holdYears: 5, rentGrowth: 3, expenseGrowth: 3, exitCap: 7.5, sellingCosts: 5 },
+  "small": { name: "Small 4-plex", price: 850_000, gpr: 145_000, otherIncome: 4_000, vacancy: 6, opex: 60_000, mgmt: 6, debt: 595_000, rate: 7.50, amort: 25, ioYears: 0, closingPct: 3, capex: 15_000, holdYears: 5, rentGrowth: 2.5, expenseGrowth: 2.5, exitCap: 8, sellingCosts: 5 },
+  "value-add": { name: "Value-add", price: 1_650_000, gpr: 240_000, otherIncome: 8_000, vacancy: 14, opex: 105_000, mgmt: 5, debt: 1_320_000, rate: 8.25, amort: 25, ioYears: 2, closingPct: 3, capex: 120_000, holdYears: 5, rentGrowth: 5, expenseGrowth: 3, exitCap: 7, sellingCosts: 5 },
+};
+
+// IRR via Newton-Raphson
+function calcIRR(cashFlows, guess = 0.1) {
+  let rate = guess;
+  for (let i = 0; i < 100; i++) {
+    let npv = 0;
+    let dnpv = 0;
+    for (let t = 0; t < cashFlows.length; t++) {
+      npv += cashFlows[t] / Math.pow(1 + rate, t);
+      if (t > 0) dnpv -= t * cashFlows[t] / Math.pow(1 + rate, t + 1);
+    }
+    if (Math.abs(npv) < 0.01) return rate * 100;
+    if (Math.abs(dnpv) < 1e-10) break;
+    const newRate = rate - npv / dnpv;
+    if (Math.abs(newRate - rate) < 1e-7) return newRate * 100;
+    rate = newRate;
+    if (rate < -0.99) rate = -0.99;
+    if (rate > 10) rate = 10;
+  }
+  return rate * 100;
+}
+
+function App() {
+  return (
+    <div className="app-shell w-full min-h-screen flex flex-col items-center px-4 sm:px-6">
+      <div className="w-full max-w-[640px]">
+        <Header />
+        <Analyzer />
+        <UpgradeCard />
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
+function Header() {
+  return (
+    <div className="pt-8 pb-5 anim-fadeUp">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-[11px] uppercase tracking-[0.22em]" style={{color: "var(--dim)"}}>Live Underwriting</span>
+        <span className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold"
+          style={{background: "rgba(212,145,42,0.10)", color: "var(--gold)", border: "1px solid rgba(212,145,42,0.30)"}}>
+          Underwriter · Tier B
+        </span>
+      </div>
+      <h1 className="font-display text-[36px] sm:text-[44px]" style={{lineHeight: 1.02, fontWeight: 700}}>
+        Deal Analyzer
+      </h1>
+      <p className="text-[14px] mt-3" style={{color: "var(--muted)", lineHeight: 1.55}}>
+        Full underwriting with multi-year projections. Move the sliders. See IRR, Equity Multiple, and year-by-year cash flows update in real time.
+      </p>
+    </div>
+  );
+}
+
+function Analyzer() {
+  const [preset, setPreset] = useState("default");
+  const [view, setView] = useState("snapshot"); // snapshot | projection
+
+  // Deal
+  const [price, setPrice] = useState(PRESETS.default.price);
+  const [gpr, setGpr] = useState(PRESETS.default.gpr);
+  const [otherIncome, setOtherIncome] = useState(PRESETS.default.otherIncome);
+  const [vacancy, setVacancy] = useState(PRESETS.default.vacancy);
+  const [opex, setOpex] = useState(PRESETS.default.opex);
+  const [mgmt, setMgmt] = useState(PRESETS.default.mgmt);
+  // Debt
+  const [debt, setDebt] = useState(PRESETS.default.debt);
+  const [rate, setRate] = useState(PRESETS.default.rate);
+  const [amort, setAmort] = useState(PRESETS.default.amort);
+  // Advanced
+  const [ioYears, setIoYears] = useState(PRESETS.default.ioYears);
+  const [closingPct, setClosingPct] = useState(PRESETS.default.closingPct);
+  const [capex, setCapex] = useState(PRESETS.default.capex);
+  // Projection
+  const [holdYears, setHoldYears] = useState(PRESETS.default.holdYears);
+  const [rentGrowth, setRentGrowth] = useState(PRESETS.default.rentGrowth);
+  const [expenseGrowth, setExpenseGrowth] = useState(PRESETS.default.expenseGrowth);
+  const [exitCap, setExitCap] = useState(PRESETS.default.exitCap);
+  const [sellingCosts, setSellingCosts] = useState(PRESETS.default.sellingCosts);
+
+  const [activeExplain, setActiveExplain] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const applyPreset = (key) => {
+    const p = PRESETS[key];
+    setPreset(key);
+    setPrice(p.price); setGpr(p.gpr); setOtherIncome(p.otherIncome); setVacancy(p.vacancy);
+    setOpex(p.opex); setMgmt(p.mgmt); setDebt(p.debt); setRate(p.rate);
+    setAmort(p.amort); setIoYears(p.ioYears); setClosingPct(p.closingPct); setCapex(p.capex);
+    setHoldYears(p.holdYears); setRentGrowth(p.rentGrowth); setExpenseGrowth(p.expenseGrowth);
+    setExitCap(p.exitCap); setSellingCosts(p.sellingCosts);
+  };
+
+  // ============= YEAR 1 CALC (Tier A logic) =============
+  const calc = useMemo(() => {
+    const vacancyLoss = gpr * (vacancy / 100);
+    const egi = gpr - vacancyLoss + otherIncome;
+    const mgmtFee = egi * (mgmt / 100);
+    const totalOpex = opex + mgmtFee;
+    const noi = egi - totalOpex;
+
+    const closingCosts = price * (closingPct / 100);
+    const downPayment = Math.max(price - debt, 0);
+    const equity = downPayment + closingCosts + capex;
+
+    const r = (rate / 100) / 12;
+    const n = amort * 12;
+    const monthlyPI = debt > 0 && r > 0 ? (debt * r * Math.pow(1+r,n)) / (Math.pow(1+r,n)-1) : 0;
+    const monthlyIO = debt > 0 ? debt * r : 0;
+    const inIO = ioYears > 0;
+    const monthly = inIO ? monthlyIO : monthlyPI;
+    const annualDebt = monthly * 12;
+
+    const cap = (noi / price) * 100;
+    const dscr = annualDebt > 0 ? noi / annualDebt : 0;
+    const cashFlow = noi - annualDebt;
+    const coc = equity > 0 ? (cashFlow / equity) * 100 : 0;
+
+    return { noi, egi, vacancyLoss, mgmtFee, totalOpex, equity, closingCosts, downPayment, monthly, annualDebt, cap, dscr, cashFlow, coc, inIO, monthlyPI };
+  }, [price, gpr, otherIncome, vacancy, opex, mgmt, debt, rate, amort, ioYears, closingPct, capex]);
+
+  // ============= MULTI-YEAR PROJECTION =============
+  const projection = useMemo(() => {
+    const years = [];
+    const r = (rate / 100) / 12;
+    const n = amort * 12;
+    const monthlyPI = debt > 0 && r > 0 ? (debt * r * Math.pow(1+r,n)) / (Math.pow(1+r,n)-1) : 0;
+    const monthlyIO = debt > 0 ? debt * r : 0;
+
+    let loanBalance = debt;
+    let currentGpr = gpr;
+    let currentOtherIncome = otherIncome;
+    let currentOpex = opex;
+
+    for (let y = 1; y <= holdYears; y++) {
+      const inIOPeriod = y <= ioYears;
+      const yearMonthly = inIOPeriod ? monthlyIO : monthlyPI;
+      const yearDebt = yearMonthly * 12;
+
+      // Compute principal paid this year and update balance
+      let yearPrincipal = 0;
+      let yearInterest = 0;
+      if (debt > 0) {
+        if (inIOPeriod) {
+          yearInterest = yearDebt;
+        } else {
+          for (let m = 0; m < 12; m++) {
+            const interestM = loanBalance * r;
+            const principalM = Math.min(yearMonthly - interestM, loanBalance);
+            yearInterest += interestM;
+            yearPrincipal += principalM;
+            loanBalance -= principalM;
+            if (loanBalance < 0) loanBalance = 0;
+          }
+        }
+      }
+
+      const vacancyLoss = currentGpr * (vacancy / 100);
+      const egi = currentGpr - vacancyLoss + currentOtherIncome;
+      const mgmtFee = egi * (mgmt / 100);
+      const totalOpex = currentOpex + mgmtFee;
+      const noi = egi - totalOpex;
+      const cashFlow = noi - yearDebt;
+
+      years.push({
+        year: y,
+        gpr: currentGpr,
+        otherIncome: currentOtherIncome,
+        egi,
+        opex: currentOpex,
+        mgmtFee,
+        totalOpex,
+        noi,
+        debtService: yearDebt,
+        principal: yearPrincipal,
+        interest: yearInterest,
+        loanBalance,
+        cashFlow,
+      });
+
+      currentGpr *= (1 + rentGrowth / 100);
+      currentOtherIncome *= (1 + rentGrowth / 100);
+      currentOpex *= (1 + expenseGrowth / 100);
+    }
+
+    // Exit calculation — use Year (holdYears+1) NOI for fwd-looking cap rate convention
+    const finalYearNoi = years[years.length - 1].noi * (1 + rentGrowth / 100);
+    const grossSalePrice = finalYearNoi / (exitCap / 100);
+    const sellingCostsAmt = grossSalePrice * (sellingCosts / 100);
+    const netSalePrice = grossSalePrice - sellingCostsAmt;
+    const finalLoanBalance = years[years.length - 1].loanBalance;
+    const netSaleProceeds = netSalePrice - finalLoanBalance;
+
+    const totalCashFlow = years.reduce((sum, y) => sum + y.cashFlow, 0);
+    const totalProceeds = totalCashFlow + netSaleProceeds;
+    const profit = totalProceeds - calc.equity;
+    const equityMultiple = calc.equity > 0 ? totalProceeds / calc.equity : 0;
+    const avgCoC = calc.equity > 0 ? (totalCashFlow / holdYears / calc.equity) * 100 : 0;
+
+    // IRR cash flows: year 0 = -equity, years 1..N-1 = cashFlow, year N = cashFlow + netSaleProceeds
+    const irrCashFlows = [-calc.equity];
+    for (let i = 0; i < years.length; i++) {
+      const cf = years[i].cashFlow + (i === years.length - 1 ? netSaleProceeds : 0);
+      irrCashFlows.push(cf);
+    }
+    const irr = calcIRR(irrCashFlows);
+
+    return {
+      years,
+      grossSalePrice,
+      sellingCostsAmt,
+      netSalePrice,
+      finalLoanBalance,
+      netSaleProceeds,
+      totalCashFlow,
+      totalProceeds,
+      profit,
+      equityMultiple,
+      avgCoC,
+      irr,
+    };
+  }, [price, gpr, otherIncome, vacancy, opex, mgmt, debt, rate, amort, ioYears, calc.equity, holdYears, rentGrowth, expenseGrowth, exitCap, sellingCosts]);
+
+  const verdict = useMemo(() => {
+    if (calc.cashFlow < 0) return { tone: "bad", text: "Negative cash flow year 1. You're feeding this deal every month." };
+    if (calc.dscr < 1.2) return { tone: "bad", text: "DSCR too thin. Banks walk. So should you." };
+    if (projection.irr >= 15 && calc.dscr >= 1.3) return { tone: "good", text: projection.irr.toFixed(1) + "% IRR. Strong deal. Banks fund it." };
+    if (projection.irr >= 10) return { tone: "warn", text: projection.irr.toFixed(1) + "% IRR. Acceptable but not exciting. Stress-test the exit cap." };
+    return { tone: "bad", text: projection.irr.toFixed(1) + "% IRR. Better deals exist. Pass." };
+  }, [calc, projection]);
+
+  const tone = verdict.tone === "good" ? "var(--accent)" : verdict.tone === "bad" ? "var(--danger)" : "var(--gold)";
+
+  return (
+    <div className="anim-fadeUp" style={{animationDelay: "60ms"}}>
+      {/* Preset selector */}
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 no-print" style={{scrollbarWidth: "none"}}>
+        {Object.entries(PRESETS).map(([k, p]) => (
+          <button key={k} onClick={() => applyPreset(k)}
+            className={"seg-btn text-[12px] px-3 py-2 rounded-full whitespace-nowrap font-medium " + (preset === k ? "active" : "")}
+            style={preset === k ? {} : {background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--muted)"}}>
+            {p.name}
+          </button>
+        ))}
+        <button onClick={() => window.print()}
+          className="text-[12px] px-3 py-2 rounded-full whitespace-nowrap font-medium ml-auto"
+          style={{background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--muted)"}}>
+          Print
+        </button>
+      </div>
+
+      {/* View tabs */}
+      <div className="flex p-1 rounded-xl mb-4 no-print" style={{background: "var(--bg-card)", border: "1px solid var(--border)"}}>
+        <button onClick={() => setView("snapshot")}
+          className={"tab-btn flex-1 py-2 px-3 rounded-lg text-[13px] font-semibold " + (view === "snapshot" ? "active-tab" : "")}
+          style={view !== "snapshot" ? {color: "var(--muted)"} : {}}>
+          Snapshot
+        </button>
+        <button onClick={() => setView("projection")}
+          className={"tab-btn flex-1 py-2 px-3 rounded-lg text-[13px] font-semibold " + (view === "projection" ? "active-tab" : "")}
+          style={view !== "projection" ? {color: "var(--muted)"} : {}}>
+          Projection · {holdYears}yr
+        </button>
+      </div>
+
+      {view === "snapshot" ? (
+        <SnapshotView calc={calc} amort={amort} closingPct={closingPct} setActiveExplain={setActiveExplain} verdict={verdict} tone={tone} projection={projection}/>
+      ) : (
+        <ProjectionView projection={projection} calc={calc} holdYears={holdYears} setActiveExplain={setActiveExplain} verdict={verdict} tone={tone} exitCap={exitCap} sellingCosts={sellingCosts}/>
+      )}
+
+      {/* Helper banner */}
+      <div className="flex items-center gap-2 mb-3 p-3 rounded-xl no-print"
+        style={{background: "rgba(37,99,235,0.07)", border: "1px solid rgba(37,99,235,0.20)"}}>
+        <span style={{color: "var(--info)", fontWeight: 700}}>↓</span>
+        <p className="text-[12.5px]" style={{color: "var(--muted)", lineHeight: 1.4}}>
+          <span style={{color: "var(--info)", fontWeight: 600}}>Adjust the inputs below.</span> Both Snapshot and Projection react in real time.
+        </p>
+      </div>
+
+      {/* DEAL section */}
+      <SectionHeader title="The Deal"/>
+      <div className="card p-4 sm:p-5 space-y-4 mb-4">
+        <SliderRow label="Purchase Price" value={price} setValue={setPrice} min={250000} max={15000000} step={50000} fmt={fmtShort}/>
+        <SliderRow label="Gross Rental Income" value={gpr} setValue={setGpr} min={20000} max={2000000} step={5000} fmt={fmtShort}/>
+        <SliderRow label="Other Income" value={otherIncome} setValue={setOtherIncome} min={0} max={200000} step={1000} fmt={fmtShort} subtitle="Parking, laundry, fees"/>
+        <SliderRow label="Vacancy" value={vacancy} setValue={setVacancy} min={0} max={30} step={0.5} fmt={v => v.toFixed(1) + "%"}/>
+        <SliderRow label="Operating Expenses" value={opex} setValue={setOpex} min={5000} max={1000000} step={2500} fmt={fmtShort} subtitle="Taxes + insurance + R&M + utilities"/>
+        <SliderRow label="Property Mgmt Fee" value={mgmt} setValue={setMgmt} min={0} max={12} step={0.5} fmt={v => v.toFixed(1) + "%"} subtitle="% of EGI"/>
+      </div>
+
+      {/* DEBT section */}
+      <SectionHeader title="The Debt"/>
+      <div className="card p-4 sm:p-5 space-y-4 mb-4">
+        <SliderRow label="Loan Amount" value={debt} setValue={setDebt} min={0} max={Math.floor(price * 0.85)} step={25000} fmt={fmtShort} subtitle={((debt/price)*100).toFixed(0) + "% LTV"}/>
+        <SliderRow label="Interest Rate" value={rate} setValue={setRate} min={4} max={12} step={0.125} fmt={v => v.toFixed(3) + "%"}/>
+        <SliderRow label="Amortization" value={amort} setValue={setAmort} min={15} max={30} step={5} fmt={v => v + " yr"}/>
+      </div>
+
+      {/* PROJECTION section */}
+      <SectionHeader title="The Projection"/>
+      <div className="card p-4 sm:p-5 space-y-4 mb-4">
+        <SliderRow label="Hold Period" value={holdYears} setValue={setHoldYears} min={3} max={10} step={1} fmt={v => v + " yr"}/>
+        <SliderRow label="Rent Growth" value={rentGrowth} setValue={setRentGrowth} min={0} max={8} step={0.25} fmt={v => v.toFixed(2) + "% / yr"} onExplain={() => setActiveExplain("Rent Growth")}/>
+        <SliderRow label="Expense Growth" value={expenseGrowth} setValue={setExpenseGrowth} min={0} max={8} step={0.25} fmt={v => v.toFixed(2) + "% / yr"}/>
+        <SliderRow label="Exit Cap Rate" value={exitCap} setValue={setExitCap} min={4} max={12} step={0.1} fmt={v => v.toFixed(2) + "%"} onExplain={() => setActiveExplain("Exit Cap")}/>
+        <SliderRow label="Selling Costs" value={sellingCosts} setValue={setSellingCosts} min={0} max={8} step={0.25} fmt={v => v.toFixed(2) + "%"} subtitle="% of sale price" onExplain={() => setActiveExplain("Selling Costs")}/>
+      </div>
+
+      {/* Advanced toggle */}
+      <button onClick={() => setShowAdvanced(!showAdvanced)}
+        className="w-full mb-4 text-left flex items-center justify-between px-4 py-3 rounded-xl no-print"
+        style={{background: "var(--bg-card)", border: "1px dashed var(--border-hi)"}}>
+        <span className="text-[13px] font-semibold" style={{color: "var(--muted)"}}>Advanced inputs</span>
+        <span className="text-[12px]" style={{color: "var(--dim)"}}>{showAdvanced ? "Hide" : "Show"}</span>
+      </button>
+
+      {showAdvanced && (
+        <div className="card p-4 sm:p-5 space-y-4 mb-4 anim-fadeUp">
+          <SliderRow label="Interest-Only Period" value={ioYears} setValue={setIoYears} min={0} max={5} step={1} fmt={v => v === 0 ? "None" : v + " yr"}/>
+          <SliderRow label="Closing Costs" value={closingPct} setValue={setClosingPct} min={0} max={6} step={0.25} fmt={v => v.toFixed(2) + "%"} subtitle="% of purchase price"/>
+          <SliderRow label="Day-1 Capex" value={capex} setValue={setCapex} min={0} max={500000} step={5000} fmt={fmtShort} subtitle="Renovations, repairs at acquisition"/>
+        </div>
+      )}
+
+      {activeExplain && (
+        <Definition term={activeExplain} onClose={() => setActiveExplain(null)} />
+      )}
+    </div>
+  );
+}
+
+function SnapshotView({ calc, amort, closingPct, setActiveExplain, verdict, tone, projection }) {
+  return (
+    <div className="card-hi p-4 sm:p-5 mb-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-[11px] uppercase tracking-[0.18em]" style={{color: "var(--dim)"}}>Year 1 Snapshot</div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <BigMetric label="Cap Rate" value={fmtPct(calc.cap, 2)} color={calc.cap >= 8 ? "var(--accent)" : calc.cap >= 6 ? "var(--gold)" : "var(--danger)"} onExplain={() => setActiveExplain("Cap Rate")}/>
+        <BigMetric label="DSCR" value={calc.dscr.toFixed(2) + "x"} color={calc.dscr >= 1.3 ? "var(--accent)" : calc.dscr >= 1.2 ? "var(--gold)" : "var(--danger)"} onExplain={() => setActiveExplain("DSCR")}/>
+        <BigMetric label="Cash Flow" value={(calc.cashFlow >= 0 ? "+" : "") + fmtShort(calc.cashFlow)} color={calc.cashFlow >= 0 ? "var(--accent)" : "var(--danger)"} subtitle="per year" onExplain={() => setActiveExplain("Cash Flow")}/>
+        <BigMetric label="CoC" value={fmtPct(calc.coc, 1)} color={calc.coc >= 8 ? "var(--accent)" : calc.coc >= 5 ? "var(--gold)" : "var(--danger)"} subtitle="year 1" onExplain={() => setActiveExplain("Cash-on-Cash")}/>
+      </div>
+
+      <div className="hairline my-4"/>
+
+      <div className="space-y-1.5 mb-4">
+        <LedgerRow label="Effective Gross Income" value={fmtShort(calc.egi)}/>
+        <LedgerRow label="Total Operating Expenses" value={"-" + fmtShort(calc.totalOpex)} negative/>
+        <LedgerRow label="NOI" value={fmtShort(calc.noi)} bold onExplain={() => setActiveExplain("NOI")}/>
+        <LedgerRow label="Annual Debt Service" value={"-" + fmtShort(calc.annualDebt)} negative subtitle={calc.inIO ? "Interest-only" : amort + " yr amort"}/>
+        <LedgerRow label="Cash Flow" value={fmtShort(calc.cashFlow)} bold accent={calc.cashFlow >= 0 ? "var(--accent)" : "var(--danger)"}/>
+        <LedgerRow label="Total Cash In" value={fmtShort(calc.equity)} subtitle={"Down + " + closingPct + "% closing"}/>
+      </div>
+
+      <div className="hairline mb-4"/>
+
+      <div className="flex items-start gap-2.5">
+        <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5" style={{background: tone + "33"}}>
+          <span style={{color: tone, fontSize: 11, fontWeight: 700}}>!</span>
+        </div>
+        <p className="text-[14px]" style={{color: tone, lineHeight: 1.5, fontWeight: 600}}>{verdict.text}</p>
+      </div>
+    </div>
+  );
+}
+
+function ProjectionView({ projection, calc, holdYears, setActiveExplain, verdict, tone, exitCap, sellingCosts }) {
+  const irrColor = projection.irr >= 15 ? "var(--accent)" : projection.irr >= 10 ? "var(--gold)" : "var(--danger)";
+  const emColor = projection.equityMultiple >= 2.0 ? "var(--accent)" : projection.equityMultiple >= 1.5 ? "var(--gold)" : "var(--danger)";
+
+  // Equity buildup chart data
+  const chartData = projection.years.map(y => ({
+    year: y.year,
+    equity: Math.max(0, (y.noi / (exitCap / 100)) - y.loanBalance),
+    cashFlow: y.cashFlow,
+  }));
+  const maxEquity = Math.max(...chartData.map(d => d.equity), 1);
+
+  return (
+    <>
+      <div className="card-hi p-4 sm:p-5 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-[11px] uppercase tracking-[0.18em]" style={{color: "var(--dim)"}}>{holdYears}-Year Projection</div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <BigMetric label="IRR" value={projection.irr.toFixed(1) + "%"} color={irrColor} subtitle="annualized" onExplain={() => setActiveExplain("IRR")}/>
+          <BigMetric label="Equity Multiple" value={projection.equityMultiple.toFixed(2) + "x"} color={emColor} subtitle="over hold" onExplain={() => setActiveExplain("Equity Multiple")}/>
+          <BigMetric label="Total Profit" value={fmtShort(projection.profit)} color={projection.profit > 0 ? "var(--accent)" : "var(--danger)"} subtitle={holdYears + "yr"}/>
+          <BigMetric label="Avg CoC" value={fmtPct(projection.avgCoC, 1)} color={projection.avgCoC >= 8 ? "var(--accent)" : projection.avgCoC >= 5 ? "var(--gold)" : "var(--danger)"} subtitle="per year" onExplain={() => setActiveExplain("Average CoC")}/>
+        </div>
+
+        <div className="hairline my-4"/>
+
+        {/* Exit math */}
+        <div className="space-y-1.5 mb-4">
+          <LedgerRow label="Sale Price (gross)" value={fmtShort(projection.grossSalePrice)} subtitle={"Y" + (holdYears+1) + " NOI / " + exitCap + "% cap"}/>
+          <LedgerRow label="Selling Costs" value={"-" + fmtShort(projection.sellingCostsAmt)} negative subtitle={sellingCosts + "%"}/>
+          <LedgerRow label="Loan Payoff" value={"-" + fmtShort(projection.finalLoanBalance)} negative/>
+          <LedgerRow label="Net Sale Proceeds" value={fmtShort(projection.netSaleProceeds)} bold/>
+          <LedgerRow label="Total Cash Flow (hold)" value={fmtShort(projection.totalCashFlow)}/>
+          <LedgerRow label="Equity Invested" value={"-" + fmtShort(calc.equity)} negative/>
+          <LedgerRow label="Total Profit" value={fmtShort(projection.profit)} bold accent={projection.profit > 0 ? "var(--accent)" : "var(--danger)"}/>
+        </div>
+
+        <div className="hairline mb-4"/>
+
+        <div className="flex items-start gap-2.5">
+          <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5" style={{background: tone + "33"}}>
+            <span style={{color: tone, fontSize: 11, fontWeight: 700}}>!</span>
+          </div>
+          <p className="text-[14px]" style={{color: tone, lineHeight: 1.5, fontWeight: 600}}>{verdict.text}</p>
+        </div>
+      </div>
+
+      {/* Equity buildup chart */}
+      <div className="card p-4 sm:p-5 mb-4">
+        <div className="text-[11px] uppercase tracking-[0.18em] mb-3" style={{color: "var(--dim)"}}>Equity Buildup</div>
+        <div style={{height: 120}} className="flex items-end gap-2">
+          {chartData.map((d, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className="text-[10px] font-mono" style={{color: "var(--dim)"}}>{fmtShort(d.equity)}</div>
+              <div className="w-full rounded-t" style={{
+                height: (d.equity / maxEquity * 80) + "px",
+                background: "linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%)",
+                minHeight: 2,
+              }}/>
+              <div className="text-[10px]" style={{color: "var(--muted)"}}>Y{d.year}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Year-by-year cash flow table */}
+      <div className="card p-4 sm:p-5 mb-4 overflow-x-auto">
+        <div className="text-[11px] uppercase tracking-[0.18em] mb-3" style={{color: "var(--dim)"}}>Year-by-Year</div>
+        <div style={{minWidth: 480}}>
+          <div className="grid gap-2 text-[11px] uppercase tracking-wider mb-2 pb-2" style={{gridTemplateColumns: "40px 1fr 1fr 1fr 1fr", color: "var(--dim)", borderBottom: "1px solid var(--border)"}}>
+            <div>Yr</div>
+            <div className="text-right">NOI</div>
+            <div className="text-right">Debt</div>
+            <div className="text-right">CF</div>
+            <div className="text-right">Loan Bal</div>
+          </div>
+          {projection.years.map((y) => (
+            <div key={y.year} className="grid gap-2 py-1.5 text-[12px] font-mono table-row" style={{gridTemplateColumns: "40px 1fr 1fr 1fr 1fr", borderBottom: "1px solid var(--border)"}}>
+              <div className="font-semibold" style={{color: "var(--text)"}}>Y{y.year}</div>
+              <div className="text-right" style={{color: "var(--text)"}}>{fmtShort(y.noi)}</div>
+              <div className="text-right" style={{color: "var(--muted)"}}>{fmtShort(y.debtService)}</div>
+              <div className="text-right font-semibold" style={{color: y.cashFlow > 0 ? "var(--accent)" : "var(--danger)"}}>{fmtShort(y.cashFlow)}</div>
+              <div className="text-right" style={{color: "var(--muted)"}}>{fmtShort(y.loanBalance)}</div>
+            </div>
+          ))}
+          <div className="grid gap-2 py-2 text-[12px] font-mono mt-1" style={{gridTemplateColumns: "40px 1fr 1fr 1fr 1fr", borderTop: "2px solid var(--border-hi)"}}>
+            <div className="font-semibold" style={{color: "var(--accent)"}}>Total</div>
+            <div></div>
+            <div></div>
+            <div className="text-right font-bold" style={{color: "var(--accent)"}}>{fmtShort(projection.totalCashFlow)}</div>
+            <div></div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SectionHeader({ title }) {
+  return (
+    <div className="text-[11px] uppercase tracking-[0.18em] mb-2 px-1" style={{color: "var(--dim)", fontWeight: 600}}>
+      {title}
+    </div>
+  );
+}
+
+function BigMetric({ label, value, color, subtitle, onExplain }) {
+  return (
+    <button onClick={onExplain}
+      className="text-left p-3 rounded-xl relative big-tap"
+      style={{background: "var(--bg-elev)", border: "1px solid var(--border)"}}>
+      <div className="text-[9.5px] uppercase tracking-wider" style={{color: "var(--dim)"}}>{label}</div>
+      <div className="font-display text-[24px] mt-0.5" style={{color, lineHeight: 1.1, fontWeight: 700}}>{value}</div>
+      {subtitle && <div className="text-[10px] mt-0.5" style={{color: "var(--muted)"}}>{subtitle}</div>}
+      <span className="absolute top-2 right-2 w-4 h-4 rounded-full flex items-center justify-center font-mono text-[9px] font-bold"
+        style={{background: "var(--border)", color: "var(--dim)"}}>?</span>
+    </button>
+  );
+}
+
+function LedgerRow({ label, value, subtitle, bold, negative, accent, onExplain }) {
+  const labelSize = bold ? "13" : "12.5";
+  const valueSize = bold ? "14" : "13";
+  return (
+    <div className="flex items-baseline justify-between">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={"text-[" + labelSize + "px] " + (bold ? "font-semibold" : "")} style={{color: bold ? "var(--text)" : "var(--muted)"}}>
+          {label}
+        </span>
+        {subtitle && <span className="text-[10px]" style={{color: "var(--dim)"}}>· {subtitle}</span>}
+        {onExplain && (
+          <button onClick={onExplain} className="w-3.5 h-3.5 rounded-full flex items-center justify-center" style={{background: "var(--bg-elev)", border: "1px solid var(--border)"}}>
+            <span className="font-mono text-[8px]" style={{color: "var(--dim)"}}>?</span>
+          </button>
+        )}
+      </div>
+      <span className={"font-mono text-[" + valueSize + "px] " + (bold ? "font-bold" : "")} style={{color: accent || (negative ? "var(--muted)" : "var(--text)")}}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SliderRow({ label, value, setValue, min, max, step, fmt, onExplain, subtitle }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[13px] font-semibold" style={{color: "var(--text)"}}>{label}</span>
+          {onExplain && (
+            <button onClick={onExplain} className="w-4 h-4 rounded-full flex items-center justify-center" style={{background: "var(--bg-card)", border: "1px solid var(--border)"}}>
+              <span className="font-mono text-[9px]" style={{color: "var(--dim)"}}>?</span>
+            </button>
+          )}
+        </div>
+        <span className="font-mono text-[15px]" style={{color: "var(--accent)", fontWeight: 600}}>{fmt(value)}</span>
+      </div>
+      {subtitle && <div className="text-[10.5px] mb-1.5" style={{color: "var(--dim)"}}>{subtitle}</div>}
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e => setValue(parseFloat(e.target.value))}/>
+    </div>
+  );
+}
+
+function Definition({ term, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 py-6"
+      style={{background: "rgba(15,23,41,0.45)"}}
+      onClick={onClose}>
+      <div className="w-full max-w-[460px] card p-5"
+        onClick={e => e.stopPropagation()}
+        style={{background: "var(--bg-card)", boxShadow: "0 20px 60px -20px rgba(15,23,41,0.30)"}}>
+        <div className="flex items-start justify-between mb-2">
+          <div className="font-display text-[22px]" style={{fontWeight: 700}}>{term}</div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center"
+            style={{background: "var(--bg-elev)", border: "1px solid var(--border)", color: "var(--muted)"}}>
+            ×
+          </button>
+        </div>
+        <p className="text-[14px]" style={{color: "var(--muted)", lineHeight: 1.55}}>
+          {DEFINITIONS[term] || "Definition coming soon."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function UpgradeCard() {
+  return (
+    <div className="mt-6 mb-2 anim-fadeUp no-print" style={{animationDelay: "180ms"}}>
+      <div className="rounded-2xl p-5 sm:p-6"
+        style={{background: "linear-gradient(135deg, #1A1410 0%, #2A1F18 100%)", border: "1px solid rgba(212,145,42,0.35)"}}>
+        <div className="mb-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] mb-1" style={{color: "var(--gold)", fontWeight: 700}}>Upgrade</div>
+          <div className="font-display text-[24px] sm:text-[28px]" style={{color: "#FFF8E7", lineHeight: 1.1, fontWeight: 700}}>
+            Pro · The Full Underwriting Tool
+          </div>
+        </div>
+        <p className="text-[13px] mb-4" style={{color: "rgba(255,248,231,0.75)", lineHeight: 1.5}}>
+          Pro adds tax modeling, sensitivity matrices, asset-class presets, refinance scenarios, and PDF export. Competes with REAP and RealData at a fraction of the price.
+        </p>
+
+        <div className="p-3.5 rounded-xl mb-4" style={{background: "rgba(255,248,231,0.05)", border: "1px solid rgba(212,145,42,0.25)"}}>
+          <div className="flex items-baseline justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <div className="font-display text-[18px]" style={{color: "#FFF8E7", fontWeight: 700}}>Pro</div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider upgrade-shimmer" style={{color: "#1A1410"}}>Best</span>
+            </div>
+            <div className="font-mono text-[16px]" style={{color: "var(--gold)", fontWeight: 700}}>$299</div>
+          </div>
+          <p className="text-[12px]" style={{color: "rgba(255,248,231,0.65)", lineHeight: 1.45}}>
+            Tax & depreciation · Sensitivity heatmap · Asset-class presets (hotels, MF, STR, storage, MHP) · Refinance modeling · PDF export · Save & reload deals
+          </p>
+        </div>
+
+        <button onClick={() => window.alert("Coming soon. Replace this with your real checkout URL.")}
+          className="w-full py-3 text-[13.5px] uppercase tracking-wider font-bold"
+          style={{background: "linear-gradient(135deg, var(--gold), var(--gold-2))", color: "#3A2700", borderRadius: 12, boxShadow: "0 4px 0 #A77517"}}>
+          Upgrade to Pro
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <div className="mt-6 mb-8 text-center anim-fadeUp" style={{animationDelay: "220ms"}}>
+      <p className="text-[11px]" style={{color: "var(--dim)", lineHeight: 1.5}}>
+        Educational tool · Not investment advice
+      </p>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
