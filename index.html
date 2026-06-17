@@ -5556,11 +5556,17 @@ function Dot({ d }) {
 
 /* ===== Auth gate (CRE U auth integration) =========================
    Wraps the app in a login wall + entitlement check.
-   NOTE: Stripe checkout is not wired up yet — the buy buttons show a
-   "coming soon" notice. A later session replaces handleBuy() with real
-   Stripe Payment Links. ============================================== */
+   Buy buttons redirect to live Stripe Payment Links via STRIPE_LINKS;
+   keys with no link yet fall through to a "coming soon" alert. ======= */
 const PRODUCT_CODE = "cre_u_any";
 const PRODUCT_NAME = "CRE University";
+
+// Live Stripe Payment Links, keyed by product code.
+const STRIPE_LINKS = {
+  da_b: "https://buy.stripe.com/4gM14o0zV95LfmOc5V0co03",          // Underwriter
+  da_c: "https://buy.stripe.com/5kQ6oI3M7gydgqS1rh0co04",          // Pro
+  cre_u_lifetime: "https://buy.stripe.com/bJe3cw6Yjdm1fmOgmb0co05", // CRE University Lifetime
+};
 
 function AuthGate({ productCode, productName, children }) {
   const [status, setStatus] = React.useState("loading"); // loading | locked | nosub | ready
@@ -5628,8 +5634,10 @@ function AuthGate({ productCode, productName, children }) {
     }
   };
 
-  const handleBuy = (label) => {
-    window.alert(label + " — checkout isn't live yet. It's coming soon. You're signed in, so access will appear here automatically once it launches.");
+  const handleBuy = (key) => {
+    const url = STRIPE_LINKS[key];
+    if (url) { window.location.href = url; return; }
+    window.alert("That option is coming soon. You're signed in, so access will appear here automatically once it launches.");
   };
 
   if (status === "loading") {
@@ -5695,12 +5703,12 @@ function AuthGate({ productCode, productName, children }) {
           </p>
           {isCreU ? (
             <>
-              <button onClick={() => handleBuy("CRE University · Lifetime ($399)")}
+              <button onClick={() => handleBuy("cre_u_lifetime")}
                 className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
                 style={{background: "linear-gradient(135deg, var(--gold), var(--gold-2))", color: "#3A2700", boxShadow: "0 4px 0 #A77517"}}>
-                Lifetime · $399 — Coming soon
+                Lifetime · $399
               </button>
-              <button onClick={() => handleBuy("CRE University · Monthly ($49/mo)")}
+              <button onClick={() => handleBuy("cre_u_monthly")}
                 className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
                 style={{background: "var(--accent)", color: "#FFF"}}>
                 Monthly · $49 — Coming soon
@@ -5711,10 +5719,10 @@ function AuthGate({ productCode, productName, children }) {
               This tool is free with your account. Your access is still finalizing — refresh in a moment, and if it persists, sign out and back in.
             </p>
           ) : (
-            <button onClick={() => handleBuy(productName)}
+            <button onClick={() => handleBuy(productCode)}
               className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
               style={{background: "linear-gradient(135deg, var(--gold), var(--gold-2))", color: "#3A2700", boxShadow: "0 4px 0 #A77517"}}>
-              Buy now — Coming soon
+              Buy now
             </button>
           )}
           <button onClick={() => window.CREAuth.signOut()} className="text-[12px] underline" style={{color: "var(--muted)"}}>
