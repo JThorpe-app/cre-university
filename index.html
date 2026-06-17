@@ -5566,6 +5566,7 @@ const STRIPE_LINKS = {
   da_b: "https://buy.stripe.com/4gM14o0zV95LfmOc5V0co03",          // Underwriter
   da_c: "https://buy.stripe.com/5kQ6oI3M7gydgqS1rh0co04",          // Pro
   cre_u_lifetime: "https://buy.stripe.com/bJe3cw6Yjdm1fmOgmb0co05", // CRE University Lifetime
+  cre_u_monthly: "https://buy.stripe.com/dRm7sM6Yj5Tz8Yqd9Z0co06",  // CRE University Monthly
 };
 
 function AuthGate({ productCode, productName, children }) {
@@ -5711,7 +5712,7 @@ function AuthGate({ productCode, productName, children }) {
               <button onClick={() => handleBuy("cre_u_monthly")}
                 className="block w-full py-3.5 text-[13.5px] uppercase tracking-wider font-bold rounded-xl mb-3"
                 style={{background: "var(--accent)", color: "#FFF"}}>
-                Monthly · $49 — Coming soon
+                Monthly · $49
               </button>
             </>
           ) : productCode === "da_a" ? (
