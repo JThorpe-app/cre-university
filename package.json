@@ -1,0 +1,10 @@
+{
+  "name": "cre-university",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CRE University + Deal Analyzer — auth, entitlements, and Stripe webhook",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "stripe": "^17.0.0"
+  }
+}
